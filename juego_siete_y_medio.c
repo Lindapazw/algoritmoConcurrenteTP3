@@ -4,6 +4,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
+#include <string.h>  // Incluir la librería string.h
 
 #define MAX_JUGADORES 10 // Máximo número de jugadores permitidos
 #define PIPE_LECTURA 0
@@ -55,6 +56,8 @@ int main(int argc, char *argv[]) {
                 float carta;
                 read(pipes_jugadores[i][PIPE_LECTURA], &carta, sizeof(float));
                 puntos += carta;
+
+                printf("Jugador %d recibió una carta de valor %.1f. Puntos actuales: %.1f\n", i+1, carta, puntos);
 
                 if (puntos > 7.5) {
                     write(pipes_jugadores[i][PIPE_ESCRITURA], "abandonado", 10);
@@ -122,6 +125,7 @@ void repartir_cartas(int pipes_jugadores[][2], int cantidad_jugadores) {
             if (rand() % 10 < 3) { // 30% probabilidad de figura (0.5)
                 carta = 0.5;
             }
+            printf("Repartiendo carta de valor %.1f al Jugador %d\n", carta, i+1);
             write(pipes_jugadores[i][PIPE_ESCRITURA], &carta, sizeof(float));
         }
     }
@@ -133,6 +137,7 @@ void recoger_decisiones(int pipes_jugadores[][2], Jugador jugadores[], int canti
         char decision[10];
         read(pipes_jugadores[i][PIPE_LECTURA], decision, sizeof(decision));
         strcpy(jugadores[i].estado, decision);
+        printf("Jugador %d decidió: %s\n", jugadores[i].id, jugadores[i].estado);
         if (strcmp(decision, "jugando") == 0) {
             float carta;
             read(pipes_jugadores[i][PIPE_LECTURA], &carta, sizeof(float));
