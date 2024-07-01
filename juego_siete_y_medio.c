@@ -4,7 +4,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
-#include <string.h>  // Incluir la librería string.h
+#include <string.h>
 
 #define MAX_JUGADORES 10 // Máximo número de jugadores permitidos
 #define PIPE_LECTURA 0
@@ -17,8 +17,8 @@ typedef struct {
     char estado[10];    // Estado del jugador ("jugando", "plantado", "abandonado")
 } Jugador;
 
-void repartir_cartas(int pipes_jugadores[][2], int cantidad_jugadores);
-void recoger_decisiones(int pipes_jugadores[][2], Jugador jugadores[], int cantidad_jugadores);
+void repartir_cartas(int pipes_jugadores[][2][2], int cantidad_jugadores);
+void recoger_decisiones(int pipes_jugadores[][2][2], Jugador jugadores[], int cantidad_jugadores);
 
 int main(int argc, char *argv[]) {
     if (argc != 2) {
@@ -32,12 +32,12 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
-    int pipes_jugadores[MAX_JUGADORES][2]; // Pipes para comunicación con jugadores
+    int pipes_jugadores[MAX_JUGADORES][2][2]; // Pipes para comunicación con jugadores
     Jugador jugadores[MAX_JUGADORES];
 
     // Crear pipes y procesos jugadores
     for (int i = 0; i < cantidad_jugadores; i++) {
-        if (pipe(pipes_jugadores[i]) == -1) {
+        if (pipe(pipes_jugadores[i][PIPE_LECTURA]) == -1 || pipe(pipes_jugadores[i][PIPE_ESCRITURA]) == -1) {
             perror("Error al crear el pipe");
             exit(EXIT_FAILURE);
         }
@@ -49,37 +49,54 @@ int main(int argc, char *argv[]) {
         }
 
         if (pid == 0) { // Proceso hijo (jugador)
-            close(pipes_jugadores[i][PIPE_ESCRITURA]);
-            srand(time(NULL) ^ (getpid()<<16)); // Seed para aleatoriedad
+            close(pipes_jugadores[i][PIPE_ESCRITURA][PIPE_LECTURA]);
+            close(pipes_jugadores[i][PIPE_LECTURA][PIPE_ESCRITURA]);
+            srand(time(NULL) ^ (getpid() << 16)); // Seed para aleatoriedad
             float puntos = 0;
             while (1) {
                 float carta;
-                read(pipes_jugadores[i][PIPE_LECTURA], &carta, sizeof(float));
+                if (read(pipes_jugadores[i][PIPE_LECTURA][PIPE_LECTURA], &carta, sizeof(float)) == -1) {
+                    perror("Error al leer carta");
+                    exit(EXIT_FAILURE);
+                }
                 puntos += carta;
 
-                printf("Jugador %d recibió una carta de valor %.1f. Puntos actuales: %.1f\n", i+1, carta, puntos);
+                printf("Jugador %d recibió una carta de valor %.1f. Puntos actuales: %.1f\n", i + 1, carta, puntos);
 
                 if (puntos > 7.5) {
-                    write(pipes_jugadores[i][PIPE_ESCRITURA], "abandonado", 10);
+                    if (write(pipes_jugadores[i][PIPE_ESCRITURA][PIPE_ESCRITURA], "abandonado", 10) == -1) {
+                        perror("Error al enviar estado");
+                        exit(EXIT_FAILURE);
+                    }
                     break;
                 }
 
                 // Lógica simple aleatoria para tomar decisiones
                 int decision = rand() % 3;
                 if (decision == 0) {
-                    write(pipes_jugadores[i][PIPE_ESCRITURA], "plantado", 8);
+                    if (write(pipes_jugadores[i][PIPE_ESCRITURA][PIPE_ESCRITURA], "plantado", 8) == -1) {
+                        perror("Error al enviar estado");
+                        exit(EXIT_FAILURE);
+                    }
                     break;
                 } else if (decision == 1) {
-                    write(pipes_jugadores[i][PIPE_ESCRITURA], "jugando", 7);
+                    if (write(pipes_jugadores[i][PIPE_ESCRITURA][PIPE_ESCRITURA], "jugando", 7) == -1) {
+                        perror("Error al enviar estado");
+                        exit(EXIT_FAILURE);
+                    }
                 } else {
-                    write(pipes_jugadores[i][PIPE_ESCRITURA], "abandonado", 10);
+                    if (write(pipes_jugadores[i][PIPE_ESCRITURA][PIPE_ESCRITURA], "abandonado", 10) == -1) {
+                        perror("Error al enviar estado");
+                        exit(EXIT_FAILURE);
+                    }
                     break;
                 }
             }
-            close(pipes_jugadores[i][PIPE_LECTURA]);
+            close(pipes_jugadores[i][PIPE_LECTURA][PIPE_LECTURA]);
+            close(pipes_jugadores[i][PIPE_ESCRITURA][PIPE_ESCRITURA]);
             exit(0);
         } else { // Proceso padre (servidor)
-            close(pipes_jugadores[i][PIPE_LECTURA]);
+            close(pipes_jugadores[i][PIPE_LECTURA][PIPE_LECTURA]);
             jugadores[i].id = i + 1;
             jugadores[i].puntos = 0;
             strcpy(jugadores[i].estado, "jugando");
@@ -118,30 +135,38 @@ int main(int argc, char *argv[]) {
 }
 
 // Función para repartir cartas a los jugadores
-void repartir_cartas(int pipes_jugadores[][2], int cantidad_jugadores) {
+void repartir_cartas(int pipes_jugadores[][2][2], int cantidad_jugadores) {
     for (int ronda = 0; ronda < 3; ronda++) { // Distribuir 3 rondas de cartas
         for (int i = 0; i < cantidad_jugadores; i++) {
             float carta = (rand() % 7) + 1; // Cartas de 1 a 7
             if (rand() % 10 < 3) { // 30% probabilidad de figura (0.5)
                 carta = 0.5;
             }
-            printf("Repartiendo carta de valor %.1f al Jugador %d\n", carta, i+1);
-            write(pipes_jugadores[i][PIPE_ESCRITURA], &carta, sizeof(float));
+            printf("Repartiendo carta de valor %.1f al Jugador %d\n", carta, i + 1);
+            if (write(pipes_jugadores[i][PIPE_LECTURA][PIPE_ESCRITURA], &carta, sizeof(float)) == -1) {
+                perror("Error al repartir carta");
+            }
         }
     }
 }
 
 // Función para recoger las decisiones de los jugadores
-void recoger_decisiones(int pipes_jugadores[][2], Jugador jugadores[], int cantidad_jugadores) {
+void recoger_decisiones(int pipes_jugadores[][2][2], Jugador jugadores[], int cantidad_jugadores) {
     for (int i = 0; i < cantidad_jugadores; i++) {
         char decision[10];
-        read(pipes_jugadores[i][PIPE_LECTURA], decision, sizeof(decision));
-        strcpy(jugadores[i].estado, decision);
-        printf("Jugador %d decidió: %s\n", jugadores[i].id, jugadores[i].estado);
-        if (strcmp(decision, "jugando") == 0) {
-            float carta;
-            read(pipes_jugadores[i][PIPE_LECTURA], &carta, sizeof(float));
-            jugadores[i].puntos += carta;
+        if (read(pipes_jugadores[i][PIPE_ESCRITURA][PIPE_LECTURA], decision, sizeof(decision)) > 0) {
+            decision[strcspn(decision, "\n")] = 0; // Eliminar cualquier carácter de nueva línea
+            strcpy(jugadores[i].estado, decision);
+            printf("Jugador %d decidió: %s\n", jugadores[i].id, jugadores[i].estado);
+            if (strcmp(decision, "jugando") == 0) {
+                float carta;
+                if (read(pipes_jugadores[i][PIPE_ESCRITURA][PIPE_LECTURA], &carta, sizeof(float)) > 0) {
+                    jugadores[i].puntos += carta;
+                    printf("Jugador %d recibió una carta de valor %.1f. Puntos actuales: %.1f\n", jugadores[i].id, carta, jugadores[i].puntos);
+                }
+            }
+        } else {
+            printf("Error leyendo decisión del jugador %d\n", jugadores[i].id);
         }
     }
 }
