@@ -36,8 +36,16 @@ int main(int argc, char *argv[]) {
 
     // Crear pipes y procesos jugadores
     for (int i = 0; i < cantidad_jugadores; i++) {
-        pipe(pipes_jugadores[i]);
+        if (pipe(pipes_jugadores[i]) == -1) {
+            perror("Error al crear el pipe");
+            exit(EXIT_FAILURE);
+        }
+
         pid_t pid = fork();
+        if (pid == -1) {
+            perror("Error al hacer fork");
+            exit(EXIT_FAILURE);
+        }
 
         if (pid == 0) { // Proceso hijo (jugador)
             close(pipes_jugadores[i][PIPE_ESCRITURA]);
@@ -81,7 +89,9 @@ int main(int argc, char *argv[]) {
 
     // Esperar a que terminen todos los procesos hijos
     for (int i = 0; i < cantidad_jugadores; i++) {
-        wait(NULL);
+        if (wait(NULL) == -1) {
+            perror("Error en wait");
+        }
     }
 
     // Decidir y mostrar el ganador
