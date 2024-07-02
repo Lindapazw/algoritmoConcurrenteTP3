@@ -14,7 +14,7 @@
 typedef struct {
     int id;             // Identificador del jugador
     float puntos;       // Puntos acumulados del jugador
-    char estado[10];    // Estado del jugador ("jugando", "plantado", "abandonado")
+    char estado[20];    // Estado del jugador ("jugando", "plantado", "abandonado")
 } Jugador;
 
 void repartir_cartas(int pipes_jugadores[][2][2], int cantidad_jugadores);
@@ -153,9 +153,9 @@ void repartir_cartas(int pipes_jugadores[][2][2], int cantidad_jugadores) {
 // Función para recoger las decisiones de los jugadores
 void recoger_decisiones(int pipes_jugadores[][2][2], Jugador jugadores[], int cantidad_jugadores) {
     for (int i = 0; i < cantidad_jugadores; i++) {
-        char decision[10];
-        if (read(pipes_jugadores[i][PIPE_ESCRITURA][PIPE_LECTURA], decision, sizeof(decision)) > 0) {
-            decision[strcspn(decision, "\n")] = 0; // Eliminar cualquier carácter de nueva línea
+        char decision[20] = {0};
+        if (read(pipes_jugadores[i][PIPE_ESCRITURA][PIPE_LECTURA], decision, sizeof(decision) - 1) > 0) {
+            decision[sizeof(decision) - 1] = '\0'; // Asegurar el fin de cadena
             strcpy(jugadores[i].estado, decision);
             printf("Jugador %d decidió: %s\n", jugadores[i].id, jugadores[i].estado);
             if (strcmp(decision, "jugando") == 0) {
